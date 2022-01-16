@@ -1,0 +1,481 @@
+
+<html>
+<head>
+<style>
+textarea {
+    overflow: hidden;
+    padding: 10px;
+    resize: none;
+    width: 100%;
+}
+</style>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+    jax: ["input/TeX","input/MathML","input/AsciiMath","output/HTML-CSS","output/NativeMML", "output/CommonHTML"],
+    extensions: ["tex2jax.js","mml2jax.js","asciimath2jax.js","MathMenu.js","MathZoom.js", "CHTML-preview.js"],
+    TeX: {
+      extensions: ["AMSmath.js","AMSsymbols.js"]
+    }
+  });
+</script>
+
+
+<script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js"></script>
+
+<script>
+function processMaths(typeSimplifying, bounded)
+{
+  
+  $(".buttons").prop( "disabled", true);
+    
+  var maths =  $("#mathInput").val().replace(/\n/g, " ").replace(/\r/g, " ");
+  if (maths === "")
+  {
+    $(".buttons").prop( "disabled", false);
+    return;
+  }
+  
+  var data =  {
+    maths: maths,
+    type: typeSimplifying
+  };
+  
+  if (bounded)
+  {
+    data.type = "bounded";
+    data.operation = typeSimplifying;
+    data.low = $("#low").val();
+    data.high = $("#high").val();
+    
+    if (data.low.trim() == "" || data.high.trim() == "")
+    {
+     $(".buttons").prop( "disabled", false);
+      return;
+    }
+  }
+  
+  
+  if (typeSimplifying == "solve")
+  {
+    maths = maths.split("=");
+    
+    if (maths.length == 2)
+    {
+      
+      resultString = "Eq(";
+      for (var i = 0; i < maths.length; i++)
+      {
+        var curMath = maths[i].trim();
+        if (curMath == "")
+        {
+          continue;
+        }
+        if ( i != 0)
+        {
+          resultString = resultString + ", " + curMath + ""
+        }
+        else
+        {
+          resultString = resultString + curMath
+        }
+      }
+      resultString = resultString + ")"
+      data.maths = resultString;
+      console.log(resultString);
+    }
+    else if (maths.length > 2)
+    {
+    
+      $(".buttons").prop( "disabled", false);
+      return;
+      
+      resultString = "(";
+      for (var i = 0; i < maths.length; i++)
+      {
+        var curMath = maths[i].trim();
+        if (curMath == "")
+        {
+          continue;
+        }
+        if ( i != 0)
+        {
+          resultString = resultString + ", " + curMath;
+        }
+        else
+        {
+          resultString = resultString + curMath;
+        }
+      }
+      resultString = resultString + ")";
+      data.maths = resultString;
+    }
+  }
+  
+  data.variables = [];
+  
+  for (var i = 0; i < variables.length; i++)
+  {
+    data.maths = data.maths.replace(new RegExp("^" + variables[i].name + "$",'g'), function(match)
+    {
+      return variables[i].text;
+    });
+    data.maths = data.maths.replace(new RegExp("[^a-zA-Z0-9]" + variables[i].name + "$",'g'), function(match)
+    {
+      return match[0] + variables[i].text;
+    });
+    data.maths = data.maths.replace(new RegExp("^" + variables[i].name + "[^a-zA-Z0-9]",'g'), function(match)
+    {
+      return variables[i].text + match[match.length - 1];
+    });
+    data.maths = data.maths.replace(new RegExp("[^a-zA-Z0-9]" + variables[i].name + "[^a-zA-Z0-9]",'g'), function(match)
+    {
+      return match[0] + variables[i].text + match[match.length - 1];
+    });
+  }
+  
+  console.log("vars: " + variables);
+  
+  $.ajax({
+      type: "POST",
+      url: "/yam-maths/processMath",
+      data: data,
+      success: function(simplifiedMath)
+      {
+        try
+        {
+          var resultMath = JSON.parse(simplifiedMath);
+        }
+        catch(err)
+        {
+          var resultMath = {original: "", latex: "Parse Error", basic: "" + err, pretty: "" + simplifiedMath, evaluated:""};
+        }
+        resultMath.latex = resultMath.latex.replace(/\\(operatorname\{)([^\}]*)(\})/g, function(match)
+        {
+          match = match.substring(14);
+          match = match.substring(0, match.length - 1);
+          return "\\" + "text{"+ match+ "}";
+        });
+        resultMath.original = resultMath.original.replace(/\\(operatorname\{)([^\}]*)(\})/g, function(match)
+        {
+          match = match.substring(14);
+          match = match.substring(0, match.length - 1);
+          return "\\" + "text{"+ match+ "}";
+        });
+        $("#inputLatex").text("$$" + resultMath.original + "$$");
+        
+        $("#inputLatexRaw").val(resultMath.original);
+        delayedResize($("#inputLatexRaw")[0]);
+        
+        $("#latexResult").text("$$" + resultMath.latex + "$$");
+        
+        $("#raw").val(resultMath.basic);
+        delayedResize($("#raw")[0]);
+        
+        $("#pretty").val(resultMath.pretty);
+        delayedResize($("#pretty")[0]);
+        
+        $("#latexText").val(resultMath.latex);
+        delayedResize($("#latexText")[0]);
+        
+        $("#evaluated").val(resultMath.evaluated);
+        delayedResize($("#evaluated")[0]);
+        
+        MathJax.Hub.Queue(["Typeset",MathJax.Hub]);
+        $(".buttons").prop( "disabled", false);
+  
+      },
+      error: function (xhr, ajaxOptions, thrownError) {
+        var resultMath = {original: "", latex: "Error", basic: "" + thrownError, pretty: "", evaluated:""};
+        
+        $("#inputLatex").text("$$" + resultMath.original + "$$");
+        
+        $("#inputLatexRaw").val(resultMath.original);
+        delayedResize($("#inputLatexRaw")[0]);
+        
+        $("#latexResult").text("$$" + resultMath.latex + "$$");
+        
+        $("#raw").val(resultMath.basic);
+        delayedResize($("#raw")[0]);
+        
+        $("#pretty").val(resultMath.pretty);
+        delayedResize($("#pretty")[0]);
+        
+        $("#latexText").val(resultMath.latex);
+        delayedResize($("#latexText")[0]);
+        
+        $("#evaluated").val(resultMath.evaluated);
+        delayedResize($("#evaluated")[0]);
+        
+        MathJax.Hub.Queue(["Typeset",MathJax.Hub]);
+        $(".buttons").prop( "disabled", false);
+      }
+    });
+}
+$( document ).ready(function() {
+  $("#simplify").click(function()
+  {
+    processMaths("simplify");
+  });
+  
+  $("#gradient").click(function()
+  {
+    processMaths("gradient");
+  });
+  
+  $("#hessian").click(function()
+  {
+    processMaths("hessian");
+  });
+  
+  $("#integral").click(function()
+  {
+    processMaths("integral");
+  });
+  
+  $("#solve").click(function()
+  {
+    processMaths("solve");
+  });
+  
+  
+  $("#dintegral").click(function()
+  {
+    processMaths("integral", true);
+  });
+  
+  $("#dsum").click(function()
+  {
+    processMaths("sum", true);
+  });
+  
+  $("#addVariable").click(function()
+  {
+    $(".buttons").prop( "disabled", true);
+    $("#variableOutput").attr("hidden", true);
+    
+    var varInput =  $("#variableInput").val().replace(/\n/g, " ").replace(/\r/g, " ");
+    if (varInput === "")
+    {
+      $(".buttons").prop( "disabled", false);
+      
+      return;
+    }
+    
+    var varName =  $("#variableName").val().replace(/\n/g, " ").replace(/\r/g, " ");
+    if (varName === "")
+    {
+      $(".buttons").prop( "disabled", false);
+      
+      return;
+    }
+    
+    //varSimplified = '{"text":"' + varInput + '"}';
+    
+     $.ajax({
+      type: "POST",
+      url: "/yam-maths/addVariable",
+      data: {variable: varInput, variableName: varName},
+      success: function(varSimplified)
+      {
+      
+        $(".buttons").prop( "disabled", false);
+        
+        try
+        {
+          var resultMath = JSON.parse(varSimplified);
+        }
+        catch(err)
+        {
+          $("#variableOutput").attr("hidden", false);
+          $("#variableOutput").val("Error: " + varSimplified);
+          delayedResize($("#variableOutput")[0]);
+          return;
+        }
+        if (resultMath.isError)
+        {
+          $("#variableOutput").attr("hidden", false);
+          $("#variableOutput").val("Error: " + resultMath.error);
+          delayedResize($("#variableOutput")[0]);
+          return;
+        }
+        
+        var variableSimplified = resultMath.text;
+        
+        // Remove any variables that are named the same thing
+        var foundVariable = true;
+        while (foundVariable)
+        {
+          foundVariable = false;
+          for (var i = 0; i < variables.length; i++)
+          {
+            if (variables[i].name == varName)
+            {
+              $("#variableThing" + variables[i].id).remove();
+              variables.splice(i, 1);
+              foundVariable = true;
+              break;
+            }
+          }
+        }
+        
+        variables.push({id: curIndex, text: variableSimplified, name: varName});
+        
+        var curVariableId = 'variableThing' + curIndex;
+        var curButtonId = 'removeVariable' + curIndex;
+        $("#variables").append('<div id="' + curVariableId + '">' + varName + ": " + resultMath.text + '&nbsp;&nbsp;&nbsp;&nbsp;<button id="' + curButtonId + '">Remove Variable</button></div><br />');
+        var curThingIndex = curIndex;
+        $("#" + curButtonId).click(function()
+        {
+          for (var i = 0; i < variables.length; i++)
+          {
+            if(variables[i].id == curThingIndex)
+            {
+              variables.splice(i, 1);
+              break;
+            }
+          }
+          $("#" + curVariableId).remove();
+        });
+        
+        curIndex = curIndex + 1;
+  
+      },
+      error: function (xhr, ajaxOptions, thrownError) {
+        $(".buttons").prop( "disabled", false);
+        $("#variableOutput").attr("hidden", false);
+        $("#variableOutput").val("Error: " + thrownError);
+        delayedResize($("#variableOutput")[0]);
+        return;
+      }
+    });
+  
+  });
+  
+  autoresize(document.getElementById('mathInput'));
+  autoresize(document.getElementById('inputLatexRaw'));
+  autoresize(document.getElementById('raw'));
+  autoresize(document.getElementById('pretty'));
+  autoresize(document.getElementById('raw'));
+  autoresize(document.getElementById('latexText'));
+  autoresize(document.getElementById('evaluated'));
+  autoresize(document.getElementById('variableInput'));
+  autoresize(document.getElementById('variableOutput'));
+  
+
+  variables = [];
+  
+  $(window).scrollTop(0);
+  
+});
+
+var curIndex = 0;
+
+var variables;
+
+var observe;
+  
+  if (window.attachEvent) {
+    observe = function (element, event, handler) {
+        element.attachEvent('on'+event, handler);
+    };
+}
+else {
+    observe = function (element, event, handler) {
+        element.addEventListener(event, handler, false);
+    };
+}
+
+function resize (text) {
+        text.style.height = 'auto';
+        text.style.height = text.scrollHeight+'px';
+}
+/* 0-timeout to get the already changed text */
+function delayedResize (text) {
+    window.setTimeout(function(){
+      resize(text);
+    }, 0);
+}
+
+function autoresize(text)
+{
+    function delayedResizeWrapper()
+    {
+      return delayedResize(text);
+    }
+    observe(text, 'change',  delayedResizeWrapper);
+    observe(text, 'cut',     delayedResizeWrapper);
+    observe(text, 'paste',   delayedResizeWrapper);
+    observe(text, 'drop',    delayedResizeWrapper);
+    observe(text, 'keydown', delayedResizeWrapper);
+
+    text.focus();
+    text.select();
+    resize(text);
+}
+</script>
+</head>
+<body>
+<br />
+<h2>Variables</h2><br />
+<div id="variables">
+
+</div>
+<div id="addVariables" width="100%">
+Name: <input id="variableName"></input>Contents:
+<input id="variableInput"></input><br />
+<button id="addVariable" class="buttons">Add Variable</button>
+<br /><br />
+<textarea id="variableOutput" rows="1" style="height:1em;" hidden=false></textarea>
+</div>
+
+</div>
+<h2>Input</h2><br />
+<textarea id="mathInput" rows="1" style="height:1em;"></textarea>
+<br />
+<br />
+<button id="simplify" class="buttons">Simplify</button>
+<button id="gradient" class="buttons">Gradient</button>
+<button id="hessian" class="buttons">Hessian</button>
+<button id="integral" class="buttons">Indefinite Integral</button>
+<button id="solve" class="buttons">Solve</button>
+<br />
+<br />
+Low: 
+<input id="low"></input> High:
+<input id="high"></input>
+<br />
+<button id="dintegral" class="buttons">Definite Integral</button>
+<button id="dsum" class="buttons">Sum</button>
+<br />
+<div id="inputLatex"></div>
+<textarea id="inputLatexRaw" rows="1" style="height:1em;"></textarea>
+<br />
+<br />
+<h2>Output</h2>
+<div id="latexResult"></div>
+Evaluated:
+<textarea id="evaluated" rows="1" style="height: 1em"></textarea>
+<br />
+<br />
+Raw
+<br/>
+<textarea id="raw" rows="1" style="height:1em;"></textarea>
+<br />
+<br />
+Formatted
+<br/>
+<textarea id="pretty" rows="1" style="height:1em;"></textarea>
+<br />
+<br />
+Latex
+<br/>
+<textarea id="latexText" rows="1" style="height:1em;"></textarea>
+<br />
+<br />
+<br />
+<a href="/yam-maths/reference">How to yam-maths</a>
+
+</body>
+</html>

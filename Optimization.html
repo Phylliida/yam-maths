@@ -1,0 +1,376 @@
+<html>
+<head>
+<style>
+textarea {
+    overflow: hidden;
+    padding: 10px;
+    resize: none;
+    width: 100%;
+}
+</style>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+    jax: ["input/TeX","input/MathML","input/AsciiMath","output/HTML-CSS","output/NativeMML", "output/CommonHTML"],
+    extensions: ["tex2jax.js","mml2jax.js","asciimath2jax.js","MathMenu.js","MathZoom.js", "CHTML-preview.js"],
+    TeX: {
+      extensions: ["AMSmath.js","AMSsymbols.js"]
+    },
+    tex2jax: {
+      inlineMath: [ ['$','$'], ["\\(","\\)"] ],
+      displayMath: [ ['$$','$$'], ["\\[","\\]"] ],
+      processEscapes: true
+    }
+  });
+</script>
+
+
+<script type="text/javascript" src="https://cdn.mathjax.org/mathjax/latest/MathJax.js"></script>
+
+<script>
+
+var constraints = [];
+var constraintIndex = 0;
+
+var variables = [];
+var variableIndex = 0;
+
+function replaceRelation(relationString, relation, operator)
+{
+  if (relationString.constructor === Array)
+  {
+    for (var i = 0; i < relationString.length; i++)
+    {
+      relationString[i] = replaceRelation(relationString[i], relation, operator);
+    }
+    return relationString;
+  }
+  var relationPieces = relationString.split(new RegExp(relation, "g"));
+  
+    
+  if (relationPieces.length == 2)
+  {
+    var resultString = operator + "(";
+    resultString = resultString + relationPieces[0] + ", " + relationPieces[1];
+    resultString = resultString + ")"
+    return resultString;
+  }
+  else if(relationPieces.length <= 1)
+  {
+    return relationString;
+  }
+  else
+  {
+    var resultRelations = []
+    for (var j = 1; j < relationPieces.length; j++)
+    {
+      resultRelations.push(replaceRelations(relationPieces[j-1] + relation + relationPieces[j]));
+    }
+    return resultRelations.slice();
+  }
+}
+
+function replaceRelations(relationString)
+{
+  relationString = replaceRelation(relationString, "<=", "Le");
+  relationString = replaceRelation(relationString, ">=", "Ge");
+  relationString = replaceRelation(relationString, "!=", "Ne");
+  relationString = replaceRelation(relationString, "<", "Lt");
+  relationString = replaceRelation(relationString, ">", "Gt");
+  relationString = replaceRelation(relationString, "=", "Eq");
+  return relationString;
+}
+
+function addConstraint(constraintAdding)
+{
+  if (constraintAdding == "")
+  {
+    return;
+  }
+  
+  
+  //constraintAdding = replaceRelations(constraintAdding);
+  
+  if (constraintAdding.constructor === Array)
+  {
+    for (var i = 0; i < constraintAdding.length; i++)
+    {
+      addConstraint(constraintAdding[i]);
+    }
+    return;
+  }
+  
+  
+   $.ajax({
+    type: "POST",
+    url: "/yam-maths/addConstraint",
+    data: {constraintText: constraintAdding, constraints: JSON.stringify(constraints)},
+    success: function(simplifiedMath)
+    {
+      console.log(simplifiedMath);
+      mathData = JSON.parse(simplifiedMath);
+      
+      if (mathData.isError)
+      {
+        var resultError = mathData.error;
+        
+        $("#errorField").attr("hidden", false);
+       
+        $("#errorField").val(resultError);
+        delayedResize($("#errorField")[0]);
+        
+        return;
+      }
+      else
+      {
+        $("#errorField").attr("hidden", true);
+
+        var resultLatex = mathData.constraintLatex;
+        var newVariables = mathData.variables;
+        console.log(variables);
+        
+        var oldVariables = variables.splice();
+        
+        // Find all variables that are no longer in use
+        for (var i = 0; i < newVariables.length; i++)
+        {
+          for (var j = 0; j < oldVariables.length; j++)
+          {
+            if(newVariables[i] === oldVariables[j].name)
+            {
+              console.log("found: " + oldVariables[j].name);
+              oldVariables.splice(j, 1);
+              break;
+            }
+          }
+        }
+        
+        // Remove them
+        for (var i = 0; i < oldVariables.length; i++)
+        {
+          for (var j = 0; j < variables.length; j++)
+          {
+            if (oldVariables[i].id === variables[j].id)
+            {
+              $("#variableText" + variables[j].id).remove();
+              console.log("removing: " + variables[i].name);
+              variables.splice(j, 1);
+              break;
+            }
+          }
+        }
+        
+        
+        
+        // Find all new variables
+        for(var i = 0; i < variables.length; i++)
+        {
+          for (var j = 0; j < newVariables.length; j++)
+          {
+            if (newVariables[j] == variables[i].name)
+            {
+              newVariables.splice(j, 1);
+              break;
+            }
+          }
+        }
+        
+        
+        
+        
+        
+        for(var i = 0; i < newVariables.length; i++)
+        {
+        
+          var curVariableIndex = variableIndex;
+          var curVariableId = 'variableText' + curVariableIndex;
+          var curVariableTypeId = 'variableType' + curVariableIndex;
+          
+          $("#variables").append('<div id="' + curVariableId  + '">$' + newVariables[i] + '$&nbsp;&nbsp;&nbsp;&nbsp;<select id="' + curVariableTypeId + '"><option value="Real">Real</option> <option value="Int">Int</option><option value="Bool">Bool</option></select></div>');
+        
+          variables.push({id: curVariableIndex, name: newVariables[i], varType: "Real"});
+          variableIndex = variableIndex + 1;
+          
+        }
+        
+        console.log(variables);
+        
+      }
+      resultLatex = resultLatex.replace(/\\(operatorname\{)([^\}]*)(\})/g, function(match)
+      {
+        match = match.substring(14);
+        match = match.substring(0, match.length - 1);
+        return "\\" + "text{"+ match+ "}";
+      });
+    
+      var curConstraintIndex = constraintIndex;
+      var curConstraintId = 'constraintText' + curConstraintIndex;
+      var curRemoveButtonId = 'removeConstraint' + curConstraintIndex;
+      $("#constraints").append('<div id="' + curConstraintId + '">$' + resultLatex + '$&nbsp;&nbsp;&nbsp;&nbsp;<button id="' + curRemoveButtonId + '">Remove Constraint</button></div>');
+      
+      constraints.push({id: curConstraintIndex, constraintText: constraintAdding});
+      
+      $("#" + curRemoveButtonId).click(function()
+      {
+        for (var i = 0; i < constraints.length; i++)
+        {
+          if(constraints[i].id == curConstraintIndex)
+          {
+            constraints.splice(i, 1);
+            break;
+          }
+        }
+        $("#" + curConstraintId).remove();
+      });
+      
+      constraintIndex = constraintIndex + 1;
+          
+      MathJax.Hub.Queue(["Typeset",MathJax.Hub]);
+    },
+    error: function (xhr, ajaxOptions, thrownError) {
+      
+    }
+  });
+}
+
+
+function callSolver(solver)
+{
+   $.ajax({
+    type: "POST",
+    url: "/yam-maths/solveConstraints",
+    data: {solver: solver, constraints: JSON.stringify(constraints)},
+    success: function(resultMath)
+    {
+      mathData = JSON.parse(resultMath);
+      
+      if (mathData.isError)
+      {
+        var resultError = mathData.error;
+        
+        $("#errorFieldSol").attr("hidden", false);
+       
+        $("#errorFieldSol").val(resultError);
+        delayedResize($("#errorFieldSol")[0]);
+        
+        return;
+      }
+      else
+      {
+        $("#errorFieldSol").attr("hidden", true);
+
+        var resultLatex = mathData.constraintLatex;
+      }
+      resultLatex = resultLatex.replace(/\\(operatorname\{)([^\}]*)(\})/g, function(match)
+      {
+        match = match.substring(14);
+        match = match.substring(0, match.length - 1);
+        return "\\" + "text{"+ match+ "}";
+      });
+      
+      $("#solutionResult").text("$$" + resultLatex + "$$");
+      
+      MathJax.Hub.Queue(["Typeset",MathJax.Hub]);
+    },
+    error: function (xhr, ajaxOptions, thrownError) {
+      
+    }
+  });
+} 
+
+$( document ).ready(function() {
+  $("#addConstraint").click(function()
+  {
+    addConstraint($("#inputConstraint").val().replace(/\n/g, " ").replace(/\r/g, " ").trim());
+  });
+  
+  $("#solveLinSys").click(function()
+  {
+    callSolver("linsys");
+  });
+  
+  $("#linprog").click(function()
+  {
+    callSolver("linprog");
+  });
+
+  autoresize(document.getElementById('inputConstraint'));
+  autoresize(document.getElementById('errorField'));
+});
+
+
+var observe;
+  
+if (window.attachEvent) {
+  observe = function (element, event, handler) {
+      element.attachEvent('on'+event, handler);
+  };
+}
+else {
+    observe = function (element, event, handler) {
+        element.addEventListener(event, handler, false);
+    };
+}
+
+function resize (text) {
+        text.style.height = 'auto';
+        text.style.height = text.scrollHeight+'px';
+}
+/* 0-timeout to get the already changed text */
+function delayedResize (text) {
+    window.setTimeout(function(){
+      resize(text);
+    }, 0);
+}
+
+function autoresize(text)
+{
+    function delayedResizeWrapper()
+    {
+      return delayedResize(text);
+    }
+    observe(text, 'change',  delayedResizeWrapper);
+    observe(text, 'cut',     delayedResizeWrapper);
+    observe(text, 'paste',   delayedResizeWrapper);
+    observe(text, 'drop',    delayedResizeWrapper);
+    observe(text, 'keydown', delayedResizeWrapper);
+
+    text.focus();
+    text.select();
+    resize(text);
+}
+
+
+</script>
+
+</head>
+
+<h2>Problem</h2>
+<h3>Minimize</h3><input id="minimizeFunction"></input><br /><br />
+<h3>Subject to: </h3>
+<div id="constraints">
+
+</div>
+<br />
+<textarea id="inputConstraint" rows="1" style="height:1em;"></textarea>
+<br />
+<button id="addConstraint">Add constraint</button>
+<br />
+<br />
+<textarea id="errorField" rows="1" style="height:1em;" hidden=true></textarea>
+<h2>Variables</h2>
+<div id="variables"></div>
+
+
+
+<h2>Solution</h2>
+<h3>Linear system of equations</h3>
+<button id="solveLinSys">Solve symbolically</button>
+<button id="linprog">Linear programming</button>
+<br /> <div id="solutionResult"></div>
+<textarea id="errorFieldSol" rows="1" style="height:1em;" hidden=true></textarea>
+
+
+</body>
+</html>
